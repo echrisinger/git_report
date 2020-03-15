@@ -1,0 +1,2 @@
+class GitReportException(Exception):
+    pass
