@@ -1,8 +1,11 @@
 import argparse
+import boto3
+import os
 import re
 
 from datetime import datetime
 from dateutil.parser import parse as parse_datetime
+from logging import getLogger
 from typing import (
     NamedTuple,
     List,
@@ -12,21 +15,23 @@ from typing import (
 
 from exceptions import GitReportException
 
+log = getLogger(__name__)
+
 # TODO: Replace the latter group with a valid expression to match all valid files.
 # Otherwise will break for a subset of files.
-BROKER_URL = '' # TODO
+BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
 ISO8601_EVENT_REGEX = r'^([\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} [-,+][\d]{4}) ([/.-_a-zA-Z0-9]+)'
 
 class ParserError(GitReportException):
     pass
 
 class FswatchEvent(NamedTuple):
-    timestamp: datetime
+    timestamp: str
     file_name: str
 
     @classmethod
     def coerce(cls, timestamp: str, file_name: str):
-        dt = parse_datetime(timestamp)
+        dt = parse_datetime(timestamp).isoformat()
         return cls(dt, file_name)
 
 class FswatchAdapter:
@@ -71,7 +76,7 @@ class RegexParser:
             )
         return self.event_cls.coerce(*groups)
 
-class MetricsObserver:
+class SQSMetricsObserver:
     """
     Listens to structured logs, and publishes records to
     brokers as deemed relevant.
@@ -80,7 +85,24 @@ class MetricsObserver:
         self.broker_url = broker_url
 
     def notify(self, formatted_event: NamedTuple, event: str) -> None:
-        pass
+        # Create SQS client
+        sqs = boto3.client('sqs')
+
+        # Send message to SQS queue
+        response = sqs.send_message(
+            QueueUrl=self.broker_url,
+            MessageAttributes={
+                field: {
+                    'DataType': 'String',
+                    'StringValue': getattr(formatted_event, field)
+                } for field in formatted_event._fields
+            },
+            MessageBody=event
+        )
+        if 'MessageId' in response:
+            log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], event))
+        else:
+            log.error('Failed to send message: {}'.format(event))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -91,6 +113,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     adapter = FswatchAdapter(
         parser=RegexParser(ISO8601_EVENT_REGEX, FswatchEvent),
-        observers=[MetricsObserver(BROKER_URL)],
+        observers=[SQSMetricsObserver(BROKER_URL)],
     )
     adapter.publish(args.log)
