@@ -2,7 +2,7 @@ import IPython
 import os
 
 from git_report.events import FswatchEvent
-from git_report.logging.display_logs import FswatchAdapter, RegexParser, ISO8601_EVENT_REGEX, SQSMetricsObserver
+from git_report.display_logs import FswatchAdapter, RegexParser, ISO8601_EVENT_REGEX, SQSMetricsObserver
 import boto3
 from datetime import datetime
 from pytz import timezone
@@ -14,7 +14,7 @@ def get_event():
     return ' '.join([
         datetime.now().replace(tzinfo=timezone('EST')).
         strftime('%F %T %z'),
-        'my_file.abc'
+        'test2.abc'
     ])
 
 

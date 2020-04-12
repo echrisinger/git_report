@@ -1,10 +1,10 @@
 import os
-from datetime import datetime
 from logging import getLogger
 
 import boto3
 from botocore.exceptions import ClientError
-from gevent.monkey import patch_all
+from dateutil import parser
+from gevent import monkey
 from gevent.queue import Queue
 from gevent.threading import Thread
 
@@ -12,8 +12,8 @@ from git_report.events import FswatchEvent
 from git_report.exceptions import GitReportException
 from git_report.utils import beat_queue, select
 
-patch_all()
-
+# TODO: figure out why this breaks SSL in boto3 Dynamo lib :(
+# monkey.patch_all()
 
 log = getLogger(__name__)
 BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
@@ -23,20 +23,19 @@ FSWATCH_BEAT = 1
 class FswatchEventController:
     # TODO: needs to be abstracted to implementation for Fswatch.
     # Refactor SQS consumer to be abstracted away from FswatchEvent
-    def __init__(self, consumer, mapper):
+    def __init__(self, consumer, dao):
         self.consumer = consumer
-        self.mapper = mapper
+        self.dao = dao
 
     def get_event(self) -> FswatchEvent:
         return self.consumer.poll()
 
     def persist(self, event: FswatchEvent):
-        # TODO: implement me
-        return self.mapper.persist(event)
+        return self.dao.persist(event)
 
 
 # TODO: make this via a class factory
-class SQSConsumer:
+class FswatchEventSQSConsumer:
     def __init__(self, broker_url):
         self.broker_url = broker_url
 
@@ -54,7 +53,9 @@ class SQSConsumer:
         )
 
         res = None
+        receipt_handle = None
         if 'Messages' in response:
+            receipt_handle = response['Messages'][0]['ReceiptHandle']
             msg = response['Messages'][0]['MessageAttributes']
             res = FswatchEvent.coerce(
                 **{
@@ -62,6 +63,17 @@ class SQSConsumer:
                     for field in FswatchEvent._fields
                 }
             )
+
+            try:
+                sqs.delete_message(
+                    QueueUrl=BROKER_URL,
+                    ReceiptHandle=receipt_handle
+                )
+            except ClientError:
+                log.error(
+                    'Failed to delete event from SQS: {}'
+                    .format(receipt_handle)
+                )
         return res
 
 
@@ -69,18 +81,21 @@ class FailedToPersistError(GitReportException):
     pass
 
 
-class DynamoMapper:
-    # TODO: organize this a little more. formalize enhancement of events into separate layer.
-    def __init__(self, event_cls):
-        self.event_cls = event_cls
+class FswatchEventDynamoDao:
+    # TODO:
+    # Organize this a little more. formalize enhancement of
+    # events into separate controller method.
+    # Make this accept a different object, which has property
+    # decorators for each field it wants to look up
 
-    def persist(self, event):
+    def persist(self, event: FswatchEvent):
         dynamo = boto3.client('dynamodb')
         event_entries = {
             f: {'S': getattr(event, f)}
             for f in event._fields
         }
-        date = datetime.parse(event.timestamp).date()
+
+        date = parser.parse(event.timestamp).date()
         dynamo_item = {
             'date': {'S': str(date)},
             **event_entries
@@ -100,17 +115,19 @@ if __name__ == "__main__":
     fswatch_event_queue = Queue(maxsize=None)
     Thread(target=beat_queue, args=(fswatch_event_queue, FSWATCH_BEAT)).start()
 
-    for which, _ in select(fswatch_event_queue):
+    for which, item in select(fswatch_event_queue):
         if which is fswatch_event_queue:
             controller = FswatchEventController(
-                consumer=SQSConsumer(BROKER_URL),
-                mapper=DynamoMapper(FswatchEvent)
+                consumer=FswatchEventSQSConsumer(BROKER_URL),
+                dao=FswatchEventDynamoDao()
             )
             event = controller.get_event()
-            persisted = controller.persist(event)
-            if not persisted:
-                err_msg = ",".join([
-                    getattr(f, event)
-                    for f in event._fields
-                ])
-                log.error('Failed to store event: {}'.format(err_msg))
+            if event:
+                persisted = controller.persist(event)
+
+                if not persisted:
+                    err_msg = ",".join([
+                        getattr(f, event)
+                        for f in event._fields
+                    ])
+                    log.error('Failed to store event: {}'.format(err_msg))

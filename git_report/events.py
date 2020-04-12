@@ -4,13 +4,7 @@ from typing import NamedTuple
 from dateutil import parser
 
 
-class GitReportEvent(NamedTuple):
-    @abstractclassmethod
-    def coerce(self, **kwargs):
-        pass
-
-
-class FswatchEvent(GitReportEvent):
+class FswatchEvent(NamedTuple):
     timestamp: str
     file_name: str
 

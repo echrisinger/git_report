@@ -13,7 +13,7 @@ from typing import (
     Type,
 )
 
-from exceptions import GitReportException
+from git_report.exceptions import GitReportException
 
 log = getLogger(__name__)
 
