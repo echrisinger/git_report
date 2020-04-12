@@ -13,7 +13,7 @@ from typing import (
     Type,
 )
 
-from exceptions import GitReportException
+from git_report.exceptions import GitReportException
 
 log = getLogger(__name__)
 
@@ -22,8 +22,10 @@ log = getLogger(__name__)
 BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
 ISO8601_EVENT_REGEX = r'^([\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} [-,+][\d]{4}) ([/.-_a-zA-Z0-9]+)'
 
+
 class ParserError(GitReportException):
     pass
+
 
 class FswatchEvent(NamedTuple):
     timestamp: str
@@ -34,6 +36,7 @@ class FswatchEvent(NamedTuple):
         dt = parse_datetime(timestamp).isoformat()
         return cls(dt, file_name)
 
+
 class FswatchAdapter:
     """
     Responsible for taking an unstructured log, output by
@@ -41,6 +44,7 @@ class FswatchAdapter:
     and formatting into metadata such as date and text,
     that can be parsed by observers.
     """
+
     def __init__(self, parser, observers: List):
         self.parser = parser
         self.observers = observers
@@ -53,10 +57,12 @@ class FswatchAdapter:
     def parse_event(self, event: str) -> FswatchEvent:
         return self.parser.parse(event)
 
+
 class RegexParser:
     """
     Responsible for parsing logs, using a regex, into a structured type.
     """
+
     def __init__(self, regex: str, event_cls: Type[NamedTuple]):
         self.regex = re.compile(regex)
         self.event_cls = event_cls
@@ -76,11 +82,13 @@ class RegexParser:
             )
         return self.event_cls.coerce(*groups)
 
+
 class SQSMetricsObserver:
     """
     Listens to structured logs, and publishes records to
     brokers as deemed relevant.
     """
+
     def __init__(self, broker_url):
         self.broker_url = broker_url
 
@@ -103,6 +111,7 @@ class SQSMetricsObserver:
             log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], event))
         else:
             log.error('Failed to send message: {}'.format(event))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
