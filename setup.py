@@ -15,7 +15,8 @@ setup(
         'botocore',
         'boto3>=1.9',
         'gevent>=1.3',
-        'redis',
+        'gitpython',
         'pytz',
+        'watchdog',
     ],
 )

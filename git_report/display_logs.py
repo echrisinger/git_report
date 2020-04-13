@@ -1,19 +1,16 @@
 import argparse
-import boto3
 import os
 import re
-
 from datetime import datetime
-from dateutil.parser import parse as parse_datetime
 from logging import getLogger
-from typing import (
-    NamedTuple,
-    List,
-    Tuple,
-    Type,
-)
+from typing import List, NamedTuple, Tuple, Type, Union
+
+import boto3
+from dateutil.parser import parse as parse_datetime
+from watchdog.events import FileSystemMovedEvent, RegexMatchingEventHandler
 
 from git_report.exceptions import GitReportException
+from git_report.git import find_all_root_repos, get_versioned_files
 
 log = getLogger(__name__)
 
@@ -21,6 +18,21 @@ log = getLogger(__name__)
 # Otherwise will break for a subset of files.
 BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
 ISO8601_EVENT_REGEX = r'^([\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} [-,+][\d]{4}) ([/.-_a-zA-Z0-9]+)'
+
+
+class GitEventHandler(RegexMatchingEventHandler):
+    def on_moved(event: FileSystemMovedEvent):
+        # TODO: use ._dest_path, .src_path to emit events for both directories,
+        # with dest path coming after src_path.
+        self._add_event(event.src_path)
+        self._add_event(event._dest_path)
+
+    def on_any_event(event):
+        self._add_event(event.src_path)
+
+    def _add_src_event(event):
+        # TODO: check if file is in active source control via get_versioned_files
+        pass
 
 
 class ParserError(GitReportException):
