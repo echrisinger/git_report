@@ -8,7 +8,7 @@ from gevent import monkey
 from gevent.queue import Queue
 from gevent.threading import Thread
 
-from git_report.events import FswatchEvent
+from git_report.events import GitEvent
 from git_report.exceptions import GitReportException
 from git_report.utils import beat_queue, select
 
@@ -20,22 +20,22 @@ BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
 FSWATCH_BEAT = 1
 
 
-class FswatchEventController:
+class GitEventController:
     # TODO: needs to be abstracted to implementation for Fswatch.
-    # Refactor SQS consumer to be abstracted away from FswatchEvent
+    # Refactor SQS consumer to be abstracted away from GitEvent
     def __init__(self, consumer, dao):
         self.consumer = consumer
         self.dao = dao
 
-    def get_event(self) -> FswatchEvent:
+    def get_event(self) -> GitEvent:
         return self.consumer.poll()
 
-    def persist(self, event: FswatchEvent):
+    def persist(self, event: GitEvent):
         return self.dao.persist(event)
 
 
 # TODO: make this via a class factory
-class FswatchEventSQSConsumer:
+class GitEventSQSConsumer:
     def __init__(self, broker_url):
         self.broker_url = broker_url
 
@@ -48,7 +48,7 @@ class FswatchEventSQSConsumer:
             QueueUrl=BROKER_URL,
             AttributeNames=['All'],
             MaxNumberOfMessages=1,
-            MessageAttributeNames=list(FswatchEvent._fields),
+            MessageAttributeNames=list(GitEvent._fields),
             WaitTimeSeconds=0,
         )
 
@@ -57,10 +57,10 @@ class FswatchEventSQSConsumer:
         if 'Messages' in response:
             receipt_handle = response['Messages'][0]['ReceiptHandle']
             msg = response['Messages'][0]['MessageAttributes']
-            res = FswatchEvent.coerce(
+            res = GitEvent.coerce(
                 **{
                     field: msg[field]['StringValue']
-                    for field in FswatchEvent._fields
+                    for field in GitEvent._fields
                 }
             )
 
@@ -81,14 +81,14 @@ class FailedToPersistError(GitReportException):
     pass
 
 
-class FswatchEventDynamoDao:
+class GitEventDynamoDao:
     # TODO:
     # Organize this a little more. formalize enhancement of
     # events into separate controller method.
     # Make this accept a different object, which has property
     # decorators for each field it wants to look up
 
-    def persist(self, event: FswatchEvent):
+    def persist(self, event: GitEvent):
         dynamo = boto3.client('dynamodb')
         event_entries = {
             f: {'S': getattr(event, f)}
@@ -117,9 +117,9 @@ if __name__ == "__main__":
 
     for which, item in select(fswatch_event_queue):
         if which is fswatch_event_queue:
-            controller = FswatchEventController(
-                consumer=FswatchEventSQSConsumer(BROKER_URL),
-                dao=FswatchEventDynamoDao()
+            controller = GitEventController(
+                consumer=GitEventSQSConsumer(BROKER_URL),
+                dao=GitEventDynamoDao()
             )
             event = controller.get_event()
             if event:
