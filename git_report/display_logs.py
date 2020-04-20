@@ -1,98 +1,77 @@
-import argparse
-import boto3
 import os
-import re
-
 from datetime import datetime
-from dateutil.parser import parse as parse_datetime
 from logging import getLogger
-from typing import (
-    NamedTuple,
-    List,
-    Tuple,
-    Type,
-)
+from typing import List, NamedTuple
 
-from git_report.exceptions import GitReportException
+import boto3
+from watchdog.events import FileSystemEventHandler, FileSystemMovedEvent
+from watchdog.observers.api import ObservedWatch
+
+from git_report.events import FswatchEvent
+from git_report.repos import is_file_ignored
+from git_report.time import local_time
+from git_report.utils import get_matching_entry
 
 log = getLogger(__name__)
 
-# TODO: Replace the latter group with a valid expression to match all valid files.
-# Otherwise will break for a subset of files.
-BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
-ISO8601_EVENT_REGEX = r'^([\d]{4}-[\d]{2}-[\d]{2} [\d]{2}:[\d]{2}:[\d]{2} [-,+][\d]{4}) ([/.-_a-zA-Z0-9]+)'
 
-
-class ParserError(GitReportException):
-    pass
-
-
-class FswatchEvent(NamedTuple):
-    timestamp: str
-    file_name: str
+class RepositoryWatchRegistry(object):
+    """
+    Keeps track of observed git repositories, so we don't have to requery
+    the file system tree repetitively.
+    """
+    entries: List[ObservedWatch] = []
 
     @classmethod
-    def coerce(cls, timestamp: str, file_name: str):
-        dt = parse_datetime(timestamp).isoformat()
-        return cls(dt, file_name)
+    def register(cls, watch):
+        cls.entries.append(watch)
 
 
-class FswatchAdapter:
-    """
-    Responsible for taking an unstructured log, output by
-    a listening program, on the display logging file,
-    and formatting into metadata such as date and text,
-    that can be parsed by observers.
-    """
-
-    def __init__(self, parser, observers: List):
-        self.parser = parser
+class GitEventHandler(FileSystemEventHandler):
+    def __init__(self, observers, *args, **kwargs):
+        super(GitEventHandler, self).__init__(*args, **kwargs)
         self.observers = observers
 
-    def publish(self, event: str):
-        formatted_event = self.parse_event(event)
-        for l in self.observers:
-            l.notify(formatted_event, event)
+    def on_moved(self, event: FileSystemMovedEvent):
+        now = local_time()
+        self._add_event(event.src_path, now)
 
-    def parse_event(self, event: str) -> FswatchEvent:
-        return self.parser.parse(event)
+        if self._is_file_in_source_control(event.dest_path):
+            self._add_event(event.dest_path, now)
+
+    def on_any_event(self, event):
+        self._add_event(event.src_path)
+
+    def _is_file_in_source_control(self, path):
+        # first check if it is in a repository,
+        # and then ls the smaller active subtree
+        # to see if it is actually tracked by source control of the repo.
+        # TODO: Just apply the .gitignore regexes to the string directly
+
+        tracked_repo = get_matching_entry(
+            [entry.path for entry in RepositoryWatchRegistry.entries],
+            path
+        )
+        return tracked_repo and not is_file_ignored(path)
+
+    def _add_event(self, path, timestamp=None):
+        if not timestamp:
+            timestamp = local_time()
+
+        event = FswatchEvent(path, timestamp.isoformat())
+        for observer in self.observers:
+            observer.notify(event)
 
 
-class RegexParser:
+class SQSMetricsObserver(object):
     """
-    Responsible for parsing logs, using a regex, into a structured type.
-    """
-
-    def __init__(self, regex: str, event_cls: Type[NamedTuple]):
-        self.regex = re.compile(regex)
-        self.event_cls = event_cls
-
-    def parse(self, event: str) -> NamedTuple:
-        # Probably a better way to do this
-        # Could make this type more specific.
-        match = self.regex.match(event)
-        if not match:
-            raise ParserError(
-                "Could not parse: {}".format(event)
-            )
-        groups = match.groups()
-        if len(groups) != len(self.event_cls._fields):
-            raise ParserError(
-                "Could not parse: {}".format(event)
-            )
-        return self.event_cls.coerce(*groups)
-
-
-class SQSMetricsObserver:
-    """
-    Listens to structured logs, and publishes records to
-    brokers as deemed relevant.
+    Listens to structured logs, and publishes records to SQS broker.
     """
 
     def __init__(self, broker_url):
         self.broker_url = broker_url
 
-    def notify(self, formatted_event: NamedTuple, event: str) -> None:
+    def notify(self, formatted_event: NamedTuple) -> None:
         # Create SQS client
         sqs = boto3.client('sqs')
 
@@ -105,23 +84,10 @@ class SQSMetricsObserver:
                     'StringValue': getattr(formatted_event, field)
                 } for field in formatted_event._fields
             },
-            MessageBody=event
+            MessageBody=str(formatted_event)
         )
+
         if 'MessageId' in response:
-            log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], event))
+            log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], formatted_event))
         else:
-            log.error('Failed to send message: {}'.format(event))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "log",
-        type=str
-    )
-    args = parser.parse_args()
-    adapter = FswatchAdapter(
-        parser=RegexParser(ISO8601_EVENT_REGEX, FswatchEvent),
-        observers=[SQSMetricsObserver(BROKER_URL)],
-    )
-    adapter.publish(args.log)
+            log.error('Failed to send message: {}'.format(formatted_event))

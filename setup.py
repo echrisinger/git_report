@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 setup(
     name='git_report',
     version='0.1',
-    description='Generate git reports.',
+    description='Generate git reports and have them sent back to your command line.',
     url='http://github.com/echrisinger/git_report',
     author='Evan Chrisinger',
     author_email='echrisinger@gmail.com',
@@ -15,7 +15,8 @@ setup(
         'botocore',
         'boto3>=1.9',
         'gevent>=1.3',
-        'redis',
+        'gitpython',
         'pytz',
+        'watchdog',
     ],
 )

@@ -3,6 +3,10 @@ from typing import List
 from gevent import sleep
 from gevent.queue import Queue, Empty
 
+import re
+
+# TODO split this into separate modules
+
 
 def beat_queue(queue, beat_seconds):
     while True:
@@ -22,3 +26,12 @@ def select(*queues: List[Queue]):
 
         yield which, item
         sleep(0)
+
+
+def get_matching_entry(entries: List[str], path):
+    def wildcard_postfix(s): return r"{}*".format(s)
+    return next(iter([
+        e
+        for e in entries
+        if re.search(wildcard_postfix(e), path)
+    ]), None)
