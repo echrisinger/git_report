@@ -7,7 +7,7 @@ import boto3
 from watchdog.events import FileSystemEventHandler, FileSystemMovedEvent
 from watchdog.observers.api import ObservedWatch
 
-from git_report.events import FswatchEvent
+from git_report.events import GitEvent
 from git_report.repos import is_file_ignored
 from git_report.time import local_time
 from git_report.utils import get_matching_entry
@@ -58,7 +58,7 @@ class GitEventHandler(FileSystemEventHandler):
         if not timestamp:
             timestamp = local_time()
 
-        event = FswatchEvent(path, timestamp.isoformat())
+        event = GitEvent(path, timestamp.isoformat())
         for observer in self.observers:
             observer.notify(event)
 

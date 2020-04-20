@@ -4,7 +4,7 @@ from typing import NamedTuple
 from dateutil import parser
 
 
-class FswatchEvent(NamedTuple):
+class GitEvent(NamedTuple):
     file_name: str
     timestamp: str
 
