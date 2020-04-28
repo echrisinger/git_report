@@ -8,7 +8,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemMovedEvent
 from watchdog.observers.api import ObservedWatch
 
 from git_report.events import GitEvent
-from git_report.repos import is_file_ignored
+from git_report.repo import is_file_ignored
 from git_report.time import local_time
 from git_report.utils import get_matching_entry
 
