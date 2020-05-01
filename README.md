@@ -1,3 +1,7 @@
+Feature ideation:
+Organization shares a single table across multiple users.
+- Follow up: Events associated with identities, or not.
+
 Source .env file
 
 Create Dynamo table:
