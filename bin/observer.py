@@ -8,7 +8,7 @@ from watchdog.observers.polling import PollingObserver
 
 from git_report.display_logs import (GitEventHandler, RepositoryWatchRegistry,
                                      SQSMetricsObserver)
-from git_report.repos import find_all_root_repos
+from git_report.repo import find_all_root_repos
 
 log = getLogger(__name__)
 
