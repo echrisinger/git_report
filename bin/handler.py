@@ -10,7 +10,7 @@ from gevent.threading import Thread
 
 from git_report.events import GitEvent
 from git_report.exceptions import GitReportException
-from git_report.utils import beat_queue, select
+from git_report.threading import beat_queue, select
 
 # TODO: figure out why this breaks SSL in boto3 Dynamo lib :(
 # monkey.patch_all()

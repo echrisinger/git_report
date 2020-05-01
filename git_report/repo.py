@@ -3,7 +3,7 @@ import subprocess
 from typing import List
 
 import git
-from git_report.utils import get_matching_entry
+from git_report.strings import get_matching_entry
 
 
 def is_git_repo(path) -> bool:
