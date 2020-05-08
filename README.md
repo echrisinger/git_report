@@ -1,3 +1,6 @@
+Real README coming soon.
+
+----------------------------------------------------------------------
 Feature ideation:
 Organization shares a single table across multiple users.
 - Follow up: Events associated with identities, or not.
