@@ -19,4 +19,10 @@ setup(
         'pytz',
         'watchdog',
     ],
+    extras_require={
+        'dev': [
+            'autopep8',
+            'pylint',
+        ]
+    }
 )

@@ -12,7 +12,7 @@ from git_report.repo import find_all_root_repos
 
 log = getLogger(__name__)
 
-BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
+BROKER_URL = os.environ.get('GIT_REPORT_GIT_EVENT_URL')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
