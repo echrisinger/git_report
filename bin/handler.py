@@ -1,31 +1,74 @@
+#!/usr/bin/env python3
+
 import os
+from abc import abstractmethod
+from collections import defaultdict
+from dateutil.parser import parse
+from datetime import date, timedelta
 from logging import getLogger
+from typing import List, Type, Mapping
+from uuid import uuid1, UUID
+from methodtools import lru_cache
 
 import boto3
-from botocore.exceptions import ClientError
-from dateutil import parser
 from gevent import monkey
 from gevent.queue import Queue
 from gevent.threading import Thread
+from git_report.data_access import (ComplexEventSerializer,
+                                    DynamoEventWriter,
+                                    GitEventDynamoDao,
+                                    SQSConsumer,
+                                    SQSRawProducer)
 
-from git_report.events import GitEvent
+from git_report.events import (
+    Event,
+    GitEvent,
+    ReportRequestedEvent,
+    ReportGeneratedEvent,
+    ReportAggregations,
+    ReportFileAggregation,
+    ReportTimelines,
+    ReportTotalTimeline,
+    ReportTimelineEvent,
+)
 from git_report.exceptions import GitReportException
+from git_report.report import ReportFactory
 from git_report.threading import beat_queue, select
 
 # TODO: figure out why this breaks SSL in boto3 Dynamo lib :(
 # monkey.patch_all()
 
 log = getLogger(__name__)
-BROKER_URL = os.environ.get('GIT_REPORT_BROKER_URL')
-FSWATCH_BEAT = 1
+GIT_EVENT_QUEUE_URL = os.environ.get('GIT_REPORT_GIT_EVENT_URL')
+REPORT_REQUESTED_QUEUE_URL = os.environ.get('GIT_REPORT_REPORT_REQUESTED_EVENT_URL')
+REPORT_QUEUE_URL = os.environ.get('GIT_REPORT_REPORT_URL')
+
+# TODO: put this in configuration file (YAML)
+GIT_EVENT_TABLE_NAME = 'git_report_git_events'
+REPORT_REQUESTED_EVENT_TABLE_NAME = 'git_report_report_requested_events'
+REPORTS_TABLE_NAME = 'git_report_reports'
+
+GIT_EVENT_BEAT = 1
+REPORT_EVENT_BEAT = 0.1
+
+
+def log_failure_to_persist_event(event: Event):
+    err_msg = ",".join([
+        getattr(f, event)
+        for f in event._fields
+    ])
+    log.error('Failed to persist event: {}'.format(err_msg))
+
+# TODO: These controllers should get their own file structure, probably.
 
 
 class GitEventController:
-    # TODO: needs to be abstracted to implementation for Fswatch.
-    # Refactor SQS consumer to be abstracted away from GitEvent
     def __init__(self, consumer, dao):
         self.consumer = consumer
         self.dao = dao
+
+    def query(self, date) -> List[GitEvent]:
+        return self.dao.query(date)
 
     def get_event(self) -> GitEvent:
         return self.consumer.poll()
@@ -34,100 +77,95 @@ class GitEventController:
         return self.dao.persist(event)
 
 
-# TODO: make this via a class factory
-class GitEventSQSConsumer:
-    def __init__(self, broker_url):
-        self.broker_url = broker_url
+class ReportRequestedEventController:
+    def __init__(self, consumer, dao):
+        self.consumer = consumer
+        self.dao = dao
 
-    def poll(self):
-        # Create SQS client
-        sqs = boto3.client('sqs')
+    def get_event(self):
+        return self.consumer.poll()
 
-        # Receive message from SQS queue
-        response = sqs.receive_message(
-            QueueUrl=BROKER_URL,
-            AttributeNames=['All'],
-            MaxNumberOfMessages=1,
-            MessageAttributeNames=list(GitEvent._fields),
-            WaitTimeSeconds=0,
-        )
-
-        res = None
-        receipt_handle = None
-        if 'Messages' in response:
-            receipt_handle = response['Messages'][0]['ReceiptHandle']
-            msg = response['Messages'][0]['MessageAttributes']
-            res = GitEvent.coerce(
-                **{
-                    field: msg[field]['StringValue']
-                    for field in GitEvent._fields
-                }
-            )
-
-            try:
-                sqs.delete_message(
-                    QueueUrl=BROKER_URL,
-                    ReceiptHandle=receipt_handle
-                )
-            except ClientError:
-                log.error(
-                    'Failed to delete event from SQS: {}'
-                    .format(receipt_handle)
-                )
-        return res
+    def persist(self, event: ReportRequestedEvent):
+        return self.dao.persist(event)
 
 
-class FailedToPersistError(GitReportException):
-    pass
+class ReportController:
+    def __init__(self, report_factory, dao):
+        self.report_factory = report_factory
+        self.dao = dao
+
+    # TODO ReportGeneratedEvent => Report, and ReportGeneratedEvent should be
+    # created in notify via a "serializer"
+    def create_report(
+        self,
+        uuid: UUID,
+        report_requested_event: ReportRequestedEvent,
+        git_events: List[GitEvent]
+    ) -> ReportGeneratedEvent:
+        return self.report_factory.create_report(uuid, report_requested_event, git_events)
+
+    def persist(self, report: ReportGeneratedEvent) -> bool:
+        return self.dao.persist(report)
 
 
-class GitEventDynamoDao:
-    # TODO:
-    # Organize this a little more. formalize enhancement of
-    # events into separate controller method.
-    # Make this accept a different object, which has property
-    # decorators for each field it wants to look up
-
-    def persist(self, event: GitEvent):
-        dynamo = boto3.client('dynamodb')
-        event_entries = {
-            f: {'S': getattr(event, f)}
-            for f in event._fields
-        }
-
-        date = parser.parse(event.timestamp).date()
-        dynamo_item = {
-            'date': {'S': str(date)},
-            **event_entries
-        }
-        try:
-            dynamo.put_item(
-                TableName='git_report_fswatch_events',
-                Item=dynamo_item
-            )
-        except ClientError as e:
-            raise FailedToPersistError(e) from e
-
-        return True
-
-
+# TODO: all of this should be configured via a config file (YAML).
 if __name__ == "__main__":
-    fswatch_event_queue = Queue(maxsize=None)
-    Thread(target=beat_queue, args=(fswatch_event_queue, FSWATCH_BEAT)).start()
+    git_event_queue = Queue(maxsize=None)
+    Thread(target=beat_queue, args=(git_event_queue, GIT_EVENT_BEAT)).start()
 
-    for which, item in select(fswatch_event_queue):
-        if which is fswatch_event_queue:
-            controller = GitEventController(
-                consumer=GitEventSQSConsumer(BROKER_URL),
-                dao=GitEventDynamoDao()
-            )
-            event = controller.get_event()
-            if event:
-                persisted = controller.persist(event)
+    report_event_queue = Queue(maxsize=None)
+    Thread(target=beat_queue, args=(report_event_queue, REPORT_EVENT_BEAT)).start()
 
+    dynamo = boto3.client('dynamodb')
+    sqs = boto3.client('sqs')
+
+    git_event_controller = GitEventController(
+        consumer=SQSConsumer(sqs, GIT_EVENT_QUEUE_URL, GitEvent),
+        dao=GitEventDynamoDao(dynamo, GIT_EVENT_TABLE_NAME)
+    )
+
+    report_requested_events_controller = ReportRequestedEventController(
+        consumer=SQSConsumer(sqs, REPORT_REQUESTED_QUEUE_URL, ReportRequestedEvent),
+        dao=DynamoEventWriter(dynamo, REPORT_REQUESTED_EVENT_TABLE_NAME)
+    )
+
+    report_controller = ReportController(
+        report_factory=ReportFactory(),
+        dao=DynamoEventWriter(dynamo, REPORTS_TABLE_NAME)
+    )
+    report_producer = SQSRawProducer(sqs, REPORT_QUEUE_URL)
+
+    for which, item in select(git_event_queue, report_event_queue):
+        if which is git_event_queue:
+            git_event = git_event_controller.get_event()
+
+            if git_event:
+                persisted = git_event_controller.persist(git_event)
                 if not persisted:
-                    err_msg = ",".join([
-                        getattr(f, event)
-                        for f in event._fields
-                    ])
-                    log.error('Failed to store event: {}'.format(err_msg))
+                    log_failure_to_persist_event(git_event)
+
+        elif which is report_event_queue:
+            report_requested_event = report_requested_events_controller.get_event()
+            if report_requested_event:
+                uuid = str(uuid1())
+                request_persisted = report_requested_events_controller.persist(
+                    report_requested_event
+                )
+                if not request_persisted:
+                    log_failure_to_persist_event(report_requested_event)
+
+                git_events = git_event_controller.query(
+                    report_requested_event.report_date
+                )
+
+                report = report_controller.create_report(
+                    uuid,
+                    report_requested_event,
+                    git_events
+                )
+                # TODO: need to serialize Report/ReportGeneratedEvent
+                # report_persisted = report_controller.persist(report)
+                # if not report_persisted:
+                #     log.warn("failed to persist report for {}".format(str(uuid)))
+                serialized_report = ComplexEventSerializer.serialize(report)
+                report_producer.notify(serialized_report)

@@ -68,15 +68,15 @@ class SQSMetricsObserver(object):
     Listens to structured logs, and publishes records to SQS broker.
     """
 
-    def __init__(self, broker_url):
+    def __init__(self, sqs, broker_url):
+        self.sqs = sqs
         self.broker_url = broker_url
 
     def notify(self, formatted_event: NamedTuple) -> None:
         # Create SQS client
-        sqs = boto3.client('sqs')
 
         # Send message to SQS queue
-        response = sqs.send_message(
+        response = self.sqs.send_message(
             QueueUrl=self.broker_url,
             MessageAttributes={
                 field: {
