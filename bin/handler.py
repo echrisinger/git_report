@@ -171,6 +171,5 @@ if __name__ == "__main__":
                 # report_persisted = report_controller.persist(report)
                 # if not report_persisted:
                 #     log.warn("failed to persist report for {}".format(str(uuid)))
-                breakpoint()
                 serialized_report = ComplexEventSerializer.serialize(report)
                 report_controller.notify(serialized_report)
