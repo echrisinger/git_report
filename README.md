@@ -1,43 +1,43 @@
-Real README coming soon.
+# git-report
 
-----------------------------------------------------------------------
+git-report - get reports about your git directory activity delivered to your command line. Learn about how you're spending your time.
+
+## Examples
+
+![insert gif here](my_gif)
+
+## Usage
+
+```bash
+git clone git@github.com:echrisinger/git_report.git
+cd git_report
+pip3 install -e .
+
+# setup AWS ENV, and place necessary environment vars into .env, source file
+./setup_aws_env.sh
+
+python bin/git_report.py --observe-path path_to_root_observed_directory &
+python bin/handler.py
+```
+
+Directions for installing via PyPI & running non-locally coming soon.
+
+
+
+## Development
+
+Install the package with developer dependencies (linting & formatting).
+```
+python3 -m venv venv # construct a virtual environment
+pip3 install -e .[dev] # install project & development dependencies
+```
+
 Feature ideation:
 Organization shares a single table across multiple users.
 - Follow up: Events associated with identities, or not.
+- Setup resources via terraform
 
-Setup AWS Resources:
-
-Create Dynamo tables:
-```
-aws dynamodb create-table \
---table-name git_report_git_events \
---attribute-definitions AttributeName=date,AttributeType=S AttributeName=timestamp,AttributeType=S \
---key-schema AttributeName=date,KeyType=HASH AttributeName=timestamp,KeyType=RANGE \
---billing-mode PAY_PER_REQUEST
-```
-
-```
-aws dynamodb create-table \
---table-name git_report_report_requested_events \
---attribute-definitions AttributeName=timestamp,AttributeType=S \
---key-schema AttributeName=timestamp,KeyType=HASH \
---billing-mode PAY_PER_REQUEST
-```
-
-```
-aws dynamodb create-table \
---table-name git_report_reports \
---attribute-definitions AttributeName=date,AttributeType=S AttributeName=uuid,AttributeType=S \
---key-schema AttributeName=date,KeyType=HASH AttributeName=uuid,KeyType=RANGE \
---billing-mode PAY_PER_REQUEST
-```
-
-SQS:
-```
-aws sqs create-queue --queue-name git_report_git_events
-aws sqs create-queue --queue-name git_report_report_requested_events
-aws sqs create-queue --queue-name git_report_report_events
-```
+Setup:
 
 Source .env file
 

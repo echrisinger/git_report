@@ -16,6 +16,7 @@ setup(
         'bin/handler',
     ],
     install_requires=[
+        'awscli',
         'botocore',
         'boto3>=1.9',
         'gevent==1.4.0',
