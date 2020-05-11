@@ -5,6 +5,7 @@ from gevent.queue import Queue, Empty
 
 import re
 
+
 def beat_queue(queue, beat_seconds):
     while True:
         queue.put(True)

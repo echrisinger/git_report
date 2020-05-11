@@ -1,38 +1,80 @@
+import json
 from contextlib import contextmanager
 from datetime import date
-from dateutil import parser
 from logging import getLogger
+from numbers import Number
 from typing import List, Type
 
 from botocore.exceptions import ClientError
-
-from git_report.events import (Event, GitEvent, ReportRequestEvent,
-                               ReportResponseEvent)
+from dateutil import parser
+from git_report.events import (Event, GitEvent, ReportGeneratedEvent,
+                               ReportRequestedEvent)
 from git_report.exceptions import GitReportException
 
 log = getLogger(__name__)
 
 
-@contextmanager
-def injected_resources_context(**resources):
-    # a nice pattern, via Cameron.
-    for key, value in resources.items():
-        globals()[key] = value
+def coerce(value):
+    """
+    Try to convert to a primitive JSON type
+    (not array, object) or just nullify
+    """
+    res = None
+    if any([
+        isinstance(value, t)
+        for t in [int, str, bool]
+    ]):
+        res = value
+    elif isinstance(value, Number):
+        res = float(value)
+    else:
+        try:
+            res = str(value)
+        except:
+            res = None
+    return res
 
-    yield
 
-    for key in resources:
-        del globals()[key]
+class ComplexEventSerializer:
+    @classmethod
+    def serialize(cls, event):
+        is_namedtuple = False
+        try:
+            getattr(event, '_fields')
+            is_namedtuple = True
+        except AttributeError:
+            pass
+
+        if isinstance(event, list):
+            return [
+                cls.serialize(item)
+                for item in event
+            ]
+        elif isinstance(event, dict):
+            raise "Unexpected type -- shouldn't need to be supported"
+        elif not is_namedtuple:
+            return coerce(event)
+
+        return {
+            field: cls.serialize(getattr(event, field))
+            for field in event._fields
+        }
+
+    @classmethod
+    def deserialize(self, raw_event):
+        pass
 
 
 class SQSConsumer:
-    def __init__(self, broker_url, event_class: Type[Event]):
+    # TODO: instead of this, just pass the event_class to be parsed.
+    def __init__(self, sqs, broker_url, event_class: Type[Event]):
+        self.sqs = sqs
         self.broker_url = broker_url
         self.event_class = event_class
 
     def poll(self):
         # Receive message from SQS queue
-        response = sqs.receive_message(
+        response = self.sqs.receive_message(
             QueueUrl=self.broker_url,
             AttributeNames=['All'],
             MaxNumberOfMessages=1,
@@ -53,7 +95,7 @@ class SQSConsumer:
             )
 
             try:
-                sqs.delete_message(
+                self.sqs.delete_message(
                     QueueUrl=self.broker_url,
                     ReceiptHandle=receipt_handle
                 )
@@ -65,28 +107,44 @@ class SQSConsumer:
         return res
 
 
-class ReportSQSProducer:
-    def __init__(self, broker_url):
+class SQSEventProducer:
+    def __init__(self, sqs, broker_url):
+        self.sqs = sqs
         self.broker_url = broker_url
 
-    def notify(self, report_response_event):
-        pass
-        # Send message to SQS queue
-        # response = sqs.send_message(
-        #     QueueUrl=self.broker_url,
-        #     MessageAttributes={
-        #         field: {
-        #             'DataType': 'String',
-        #             'StringValue': getattr(formatted_event, field)
-        #         } for field in formatted_event._fields
-        #     },
-        #     MessageBody=str(formatted_event)
-        # )
+    def notify(self, event: Event):
+        response = self.sqs.send_message(
+            QueueUrl=self.broker_url,
+            MessageAttributes={
+                field: {
+                    'DataType': 'String',
+                    'StringValue': getattr(event, field)
+                } for field in event._fields
+            },
+            MessageBody=str(event)
+        )
 
-        # if 'MessageId' in response:
-        #     log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], formatted_event))
-        # else:
-        #     log.error('Failed to send message: {}'.format(formatted_event))
+        if 'MessageId' in response:
+            log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], event))
+        else:
+            log.error('Failed to send message: {}'.format(event))
+
+
+class SQSRawProducer:
+    def __init__(self, sqs, broker_url):
+        self.sqs = sqs
+        self.broker_url = broker_url
+
+    def notify(self, json_like):
+        response = self.sqs.send_message(
+            QueueUrl=self.broker_url,
+            MessageBody=json.dumps(json_like)
+        )
+
+        if 'MessageId' in response:
+            log.info('Sent Message, ID: {}, Event: {}'.format(response['MessageId'], json_like))
+        else:
+            log.error('Failed to send message: {}'.format(json_like))
 
 
 class FailedToPersistError(GitReportException):
@@ -94,7 +152,8 @@ class FailedToPersistError(GitReportException):
 
 
 class DynamoEventWriter:
-    def __init__(self, table_name):
+    def __init__(self, dynamo, table_name):
+        self.dynamo = dynamo
         self.table_name = table_name
 
     def persist(self, event: Event, **kwargs):
@@ -112,7 +171,7 @@ class DynamoEventWriter:
         }
 
         try:
-            dynamo.put_item(
+            self.dynamo.put_item(
                 TableName=self.table_name,
                 Item=dynamo_item
             )
@@ -123,33 +182,34 @@ class DynamoEventWriter:
 
 
 class GitEventDynamoDao:
-    def __init__(self, table_name):
+    def __init__(self, dynamo, table_name):
+        self.dynamo = dynamo
         self.table_name = table_name
-        self.event_writer = DynamoEventWriter(self.table_name)
+        self.event_writer = DynamoEventWriter(self.dynamo, self.table_name)
 
     def persist(self, event: GitEvent) -> bool:
         date = parser.parse(event.timestamp).date()
         return self.event_writer.persist(event, date=date)
 
     def query(self, date: date) -> List[GitEvent]:
-        response = dynamo.query(
+        response = self.dynamo.query(
             TableName=self.table_name,
-            KeyConditionExpression='date = :date',
+            KeyConditionExpression='#date = :date',
+            ExpressionAttributeNames={"#date": "date"},
             ExpressionAttributeValues={
                 ':date': {'S': str(date)}
             }
         )
 
         res = []
-        if 'Items' in response:
-            def constructor_args(item):
-                return [
-                    getattr(f, item)
-                    for f in GitEvent._fields
-                ]
 
-            res = [
-                GitEvent(*constructor_args(item))
-                for item in response['Items']
+        def args(item):
+            return [
+                getattr(f, item)
+                for f in GitEvent._fields
             ]
+        res = [
+            GitEvent(*args(item))
+            for item in response['Items']
+        ]
         return res

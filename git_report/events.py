@@ -1,11 +1,15 @@
 from typing import NamedTuple, List
 
+from datetime import timedelta
 from dateutil import parser
 
 Event = SubEvent = NamedTuple
 
 # Event => something that is sent via a message broker.
 # SubEvent => serialized inside an Event.
+
+# TODO: when these schemas start to change, put them into a more
+# formalized schema, a la protocol buffers or avro.
 
 
 class GitEvent(Event):
@@ -18,41 +22,42 @@ class GitEvent(Event):
         return cls(str(timestamp), file_name)
 
 
-class ReportRequestEvent(Event):
+class ReportRequestedEvent(Event):
     report_date: str
     timestamp: str
 
     @classmethod
     def coerce(cls, report_date, timestamp):
-        report_date = parser.parse(report_date).date()
-        timestamp = parser.parse(timestamp)
         return cls(str(report_date), str(timestamp))
 
 
+class ReportTimelineEvent(SubEvent):
+    file_name: str
+    # parse with pytimeparse.timeparse:
+    # https://stackoverflow.com/questions/4628122/how-to-construct-a-timedelta-object-from-a-simple-string
+    duration: timedelta
+
+
 class ReportTotalTimeline(SubEvent):
-    pass
+    # tracking all files across all projects
+    timeline_event: List[ReportTimelineEvent]
 
 
 class ReportTimelines(SubEvent):
     total_timeline: ReportTotalTimeline
 
 
-class ReportTimeAggregation(SubEvent):
-    pass
-
-
-class ReportCountAggregation(SubEvent):
-    pass
+class ReportFileAggregation(SubEvent):
+    file_name: str
+    duration: timedelta
+    count: int
 
 
 class ReportAggregations(SubEvent):
-    time_aggregations: List[ReportTimeAggregation]
-    count_aggregations: List[ReportCountAggregation]
+    file_aggregations: List[ReportFileAggregation]
 
 
-class ReportResponseEvent(Event):
+class ReportGeneratedEvent(Event):
+    uuid: str
     timelines: ReportTimelines
     aggregations: ReportAggregations
-
-    # project_time_aggregation: ReportProjectTimeAggregation -- TODO: in the future.
-    # projects: ReportProjects

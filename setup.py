@@ -11,10 +11,14 @@ setup(
     packages=[
         'git_report'
     ],
+    scripts=[
+        'bin/git-report',
+        'bin/handler',
+    ],
     install_requires=[
         'botocore',
         'boto3>=1.9',
-        'gevent>=1.3',
+        'gevent==1.4.0',
         'gitpython',
         'pytz',
         'watchdog',
