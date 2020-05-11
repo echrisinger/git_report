@@ -1,10 +1,62 @@
-# git-report
+# git_report
 
-git-report - get reports about your daily project activity delivered to your command line.
+git_report - get low-overhead reports about your daily git repo activity delivered to your command line.
 
 ## Examples
 
-![insert gif here](my_gif)
+```bash
+(venv) evan: (update-readme) ~/Projects/git_report$ python bin/git-report.py --request-report
+  ____ _ _     ____                       _
+ / ___(_) |_  |  _ \ ___ _ __   ___  _ __| |_
+| |  _| | __| | |_) / _ \ '_ \ / _ \| '__| __|
+| |_| | | |_  |  _ <  __/ |_) | (_) | |  | |_
+ \____|_|\__| |_| \_\___| .__/ \___/|_|   \__|
+                        |_|
+
+
+
+Counts:
+[{'count': 1,
+  'duration': '0:39:18.809865',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/README.md'},
+ {'count': 8,
+  'duration': '6:29:01.276450',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/bin'},
+ {'count': 7,
+  'duration': '5:34:43.252430',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/bin/git-report.py'},
+ {'count': 3,
+  'duration': '1:21:54.321998',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report'},
+ {'count': 1,
+  'duration': '0:41:00.702240',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/__pycache__'},
+ {'count': 2,
+  'duration': '1:22:01.343532',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/__pycache__/data_access.cpython-37.pyc'},
+ {'count': 2,
+  'duration': '0:40:57.595997',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/data_access.py'},
+ {'count': 2,
+  'duration': '1:21:54.129092',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/data_access.py.6adde4e63aab4ab04ae819b9e1d7f664.py'}]
+
+Timeline:
+[{'duration': '0:00:00',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/data_access.py'},
+ {'duration': '0:00:00.079355',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report'},
+ {'duration': '0:39:18.809865',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/README.md'},
+ {'duration': '0:40:56.551063',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/data_access.py.6adde4e63aab4ab04ae819b9e1d7f664.py'},
+ {'duration': '0:40:56.628911',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report'},
+ {'duration': '0:40:57.578029',
+  'file_name': '/Users/evanchrisinger/Projects/git_report/git_report/data_access.py.6adde4e63aab4ab04ae819b9e1d7f664.py'},
+ {'duration': '0:40:57.595997',
+ ...
+```
 
 ## Usage
 
@@ -20,12 +72,12 @@ pip3 install -e .
 # setup AWS ENV, and place necessary environment vars into .env, source file
 ./setup_aws_env.sh
 
-python bin/git_report.py --observe-path root/observed/directory &
+python bin/git-report.py --observe-path root/observed/directory &
 python bin/handler.py
 
 # ...edit some files...
 
-python bin/git_report.py --generate-report
+python bin/git-report.py --generate-report
 ```
 
 Directions for installing via PyPI & running non-locally coming soon.
@@ -36,7 +88,9 @@ Directions for installing via PyPI & running non-locally coming soon.
 
 Report requests & generated reports are communicated to & from the server, also via SQS.
 
-Server-side, [GEvent](https://github.com/gevent/gevent), a Python coroutine-based concurrency library polls for new report requests, and new file system events. This is done by running a beat thread per SQS queue on a second to sub-second interval. When a heartbeat occurs, we poll the SQS queue, and handle any events that occurred.
+Server-side, we use [GEvent](https://github.com/gevent/gevent) to schedule polling for new report requests, and new file system events. This is done by running a beat thread per SQS queue on a second to sub-second interval. When a beat occurs, we poll the SQS queue, and handle any events that occurred.
+
+Client-side, reports are displayed using pyfiglet for ASCII art & graphics.
 
 ## Development
 

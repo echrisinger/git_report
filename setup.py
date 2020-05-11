@@ -12,16 +12,17 @@ setup(
         'git_report'
     ],
     scripts=[
-        'bin/git-report',
-        'bin/handler',
+        'bin/git-report.py',
+        'bin/handler.py'
     ],
     install_requires=[
         'awscli',
         'botocore',
-        'boto3>=1.9',
+        'boto3',
         'gevent==1.4.0',
         'gitpython',
         'pytz',
+        'pyfiglet',
         'watchdog',
     ],
     extras_require={

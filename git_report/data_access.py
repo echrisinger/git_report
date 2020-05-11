@@ -60,10 +60,6 @@ class ComplexEventSerializer:
             for field in event._fields
         }
 
-    @classmethod
-    def deserialize(self, raw_event):
-        pass
-
 
 class SQSConsumer:
     # TODO: instead of this, just pass the event_class to be parsed.
@@ -145,6 +141,38 @@ class SQSRawProducer:
         else:
             log.error('Failed to send message: {}'.format(json_like))
 
+
+class SQSRawConsumer:
+    def __init__(self, sqs, broker_url):
+        self.sqs = sqs
+        self.broker_url = broker_url
+
+    def poll(self):
+        # Receive message from SQS queue
+        response = self.sqs.receive_message(
+            QueueUrl=self.broker_url,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=0,
+        )
+
+        res = None
+        receipt_handle = None
+        if 'Messages' in response:
+            receipt_handle = response['Messages'][0]['ReceiptHandle']
+            try:
+                self.sqs.delete_message(
+                    QueueUrl=self.broker_url,
+                    ReceiptHandle=receipt_handle
+                )
+            except ClientError:
+                log.error(
+                    'Failed to delete event from SQS: {}'
+                    .format(receipt_handle)
+                )
+
+            res = json.loads(response['Messages'][0]['Body'])
+
+        return res
 
 class FailedToPersistError(GitReportException):
     pass
