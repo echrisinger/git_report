@@ -17,9 +17,9 @@ class GitEvent(Event):
     timestamp: str
 
     @classmethod
-    def coerce(cls, timestamp, file_name):
+    def coerce(cls, file_name, timestamp):
         timestamp = parser.parse(timestamp)
-        return cls(str(timestamp), file_name)
+        return cls(file_name, str(timestamp))
 
 
 class ReportRequestedEvent(Event):

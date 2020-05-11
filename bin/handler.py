@@ -90,10 +90,9 @@ class ReportRequestedEventController:
 
 
 class ReportController:
-    def __init__(self, report_factory, dao, producer):
+    def __init__(self, report_factory, dao):
         self.report_factory = report_factory
         self.dao = dao
-        self.producer = producer
 
     # TODO ReportGeneratedEvent => Report, and ReportGeneratedEvent should be
     # created in notify via a "serializer"
@@ -107,9 +106,6 @@ class ReportController:
 
     def persist(self, report: ReportGeneratedEvent) -> bool:
         return self.dao.persist(report)
-
-    def notify(self, report: ReportGeneratedEvent) -> bool:
-        return self.producer.notify(report)
 
 
 # TODO: all of this should be configured via a config file (YAML).
@@ -135,9 +131,9 @@ if __name__ == "__main__":
 
     report_controller = ReportController(
         report_factory=ReportFactory(),
-        dao=DynamoEventWriter(dynamo, REPORTS_TABLE_NAME),
-        producer=SQSRawProducer(sqs, REPORT_QUEUE_URL)
+        dao=DynamoEventWriter(dynamo, REPORTS_TABLE_NAME)
     )
+    report_producer = SQSRawProducer(sqs, REPORT_QUEUE_URL)
 
     for which, item in select(git_event_queue, report_event_queue):
         if which is git_event_queue:
@@ -172,4 +168,5 @@ if __name__ == "__main__":
                 # if not report_persisted:
                 #     log.warn("failed to persist report for {}".format(str(uuid)))
                 serialized_report = ComplexEventSerializer.serialize(report)
-                report_controller.notify(serialized_report)
+                breakpoint()
+                report_producer.notify(serialized_report)

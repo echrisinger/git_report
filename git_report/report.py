@@ -52,10 +52,17 @@ class ReportFactory:
         file_aggregations: Mapping[str, ReportFileAggregation] = {}
         for event in file_sorted_timeline:
             if event.file_name not in file_aggregations:
-                file_aggregations[event.file_name] = ReportFileAggregation(timedelta(0), 0)
+                file_aggregations[event.file_name] = ReportFileAggregation(
+                    event.file_name,
+                    timedelta(0),
+                    0
+                )
 
-            aggregation = file_aggregations[event.file_name]
-            aggregation.count += 1
-            aggregation.duration += event.duration
+            old_aggregation = file_aggregations[event.file_name]
+            file_aggregations[event.file_name] = ReportFileAggregation(
+                event.file_name,
+                old_aggregation.duration + event.duration,
+                old_aggregation.count + 1
+            )
 
         return sorted(file_aggregations.values())

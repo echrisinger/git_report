@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
+
 import argparse
 import boto3
 import datetime
@@ -23,7 +24,7 @@ REPORT_REQUESTED_QUEUE_URL = os.environ.get('GIT_REPORT_REPORT_REQUESTED_EVENT_U
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--observe_path",
+        "--observe-path",
         type=str,
         default=None
     )

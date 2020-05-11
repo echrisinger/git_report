@@ -87,12 +87,11 @@ class SQSConsumer:
         if 'Messages' in response:
             receipt_handle = response['Messages'][0]['ReceiptHandle']
             msg = response['Messages'][0]['MessageAttributes']
-            res = self.event_class.coerce(
-                **{
-                    field: msg[field]['StringValue']
-                    for field in self.event_class._fields
-                }
-            )
+            coerce_args = {}
+            for field in self.event_class._fields:
+                coerce_args[field] = msg[field]['StringValue']
+
+            res = self.event_class.coerce(**coerce_args)
 
             try:
                 self.sqs.delete_message(
@@ -201,15 +200,12 @@ class GitEventDynamoDao:
             }
         )
 
-        res = []
-
-        def args(item):
-            return [
-                getattr(f, item)
+        def kwargs(item):
+            return {
+                f: item[f]['S']
                 for f in GitEvent._fields
-            ]
-        res = [
-            GitEvent(*args(item))
-            for item in response['Items']
+            }
+        return [
+            GitEvent.coerce(**kwargs(event))
+            for event in response['Items']
         ]
-        return res
