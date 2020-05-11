@@ -168,5 +168,4 @@ if __name__ == "__main__":
                 # if not report_persisted:
                 #     log.warn("failed to persist report for {}".format(str(uuid)))
                 serialized_report = ComplexEventSerializer.serialize(report)
-                breakpoint()
                 report_producer.notify(serialized_report)
