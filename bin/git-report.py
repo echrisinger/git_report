@@ -1,25 +1,30 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import argparse
-import boto3
 import datetime
-import time
 import os
 import sys
+import time
 from logging import DEBUG, StreamHandler, getLogger
+from pprint import pformat
 
-from watchdog.observers.polling import PollingObserver
-
-from git_report.data_access import SQSEventProducer
+import boto3
+from git_report.data_access import (ComplexEventSerializer, SQSEventProducer,
+                                    SQSRawConsumer)
 from git_report.display_logs import (GitEventHandler, RepositoryWatchRegistry,
                                      SQSMetricsObserver)
-from git_report.events import ReportRequestedEvent
+from git_report.events import ReportGeneratedEvent, ReportRequestedEvent
 from git_report.repo import find_all_root_repos
+from pyfiglet import figlet_format
+from watchdog.observers.polling import PollingObserver
 
 log = getLogger(__name__)
 
 GIT_EVENT_QUEUE_URL = os.environ.get('GIT_REPORT_GIT_EVENT_URL')
 REPORT_REQUESTED_QUEUE_URL = os.environ.get('GIT_REPORT_REPORT_REQUESTED_EVENT_URL')
+GIT_REPORT_REPORT_URL = os.environ.get('GIT_REPORT_REPORT_URL')
+
+REPORT_POLLING_INTERVAL = 0.1
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -79,3 +84,30 @@ if __name__ == "__main__":
         event = ReportRequestedEvent.coerce(args.report_date, datetime.datetime.now())
         producer = SQSEventProducer(sqs, REPORT_REQUESTED_QUEUE_URL)
         producer.notify(event)
+
+        poll_count = 10 / REPORT_POLLING_INTERVAL
+        raw_body = None
+
+        consumer = SQSRawConsumer(sqs, GIT_REPORT_REPORT_URL)
+        while poll_count and not raw_body:
+            poll_count -= 1
+            raw_body = consumer.poll()
+
+        ascii_header = figlet_format('Git Report')
+        print(ascii_header)
+
+        formatted_aggregations = pformat(raw_body['aggregations']['file_aggregations'])
+        formatted_timeline = pformat(raw_body['timelines']['total_timeline'])
+        git_report = """
+
+        Counts:
+        {aggregations}
+
+        Timeline:
+        {timeline}
+        """.format(
+            ascii_header=ascii_header,
+            aggregations=formatted_aggregations,
+            timeline=formatted_timeline
+        )
+        print(git_report)
