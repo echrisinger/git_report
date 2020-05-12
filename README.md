@@ -117,7 +117,7 @@ pip3 install -e .[dev] # install project & development dependencies
 
 ## Inspiration
 
-Popular GEvent libraries such as [GUnicorn]() & Golang's [awesome concurrency](https://tour.golang.org/concurrency/5).
+Popular GEvent libraries such as [GUnicorn](https://gunicorn.org/) & Golang's [awesome concurrency](https://tour.golang.org/concurrency/5).
 
 
 ## License
