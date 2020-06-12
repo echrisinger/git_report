@@ -103,7 +103,7 @@ Contributions are welcome.
 #### Code Style & Tool Usage
 
 
-A lot of style is influenced by [Clean Architecture](https://www.amazon.com/gp/your-account/order-history/ref=ppx_yo_dt_b_search?opt=ab&search=architecture), which I'm in the midst of reading. Personally I find introducing a ton of interfaces & patterns to be a little overkill for a personal project, but it was a fun mental exercise. Reflecting on some projects that I've worked on in industry, the emergent patterns begin to make sense. The end result, in this repository, is that many stylistic decisions are intentionally unpythonic. There are a lot of single method classes, some unnecessary interfaces, etc.
+A lot of style is influenced by [Clean Architecture](https://www.amazon.com/gp/your-account/order-history/ref=ppx_yo_dt_b_search?opt=ab&search=architecture), which I'm in the midst of reading. In a personal project, I find introducing a ton of interfaces & patterns to be a little overkill, but hey, it's my repo. In this project there are some intentionally unpythonic choices. There are a lot of single method classes, unnecessary interfaces, etc.
 
 
 
