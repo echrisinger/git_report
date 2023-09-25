@@ -19,7 +19,7 @@ setup(
         'awscli',
         'botocore',
         'boto3',
-        'gevent==1.4.0',
+        'gevent==23.9.1',
         'gitpython',
         'pytz',
         'pyfiglet',
